@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.3.4/axios.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ひとり言くん</title>
+    <style>
+      /* CSSスタイルはここに記述 */
+      body {
+        background-color: #f5f5f5;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+      .ccontainer {
+        background-color: #fff;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        margin: 20px auto;
+        max-width: 600px;
+        overflow: hidden;
+      }
+      .cheader {
+        background-color: #4267B2;
+        color: #fff;
+        padding: 10px;
+      }
+      .cheader h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .cmessages {
+        height: 400px;
+        overflow-y: scroll;
+        padding: 10px;
+      }
+      .message {
+        background-color: #f1f0f0;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        padding: 10px;
+      }
+      .message .sender {
+        color: #4267B2;
+        font-weight: bold;
+      }
+      .message .text {
+        margin: 5px 0;
+      }
+      .cinput {
+        background-color: #fff;
+        border-top: 1px solid #ddd;
+        padding: 10px;
+      }
+      .cinput textarea{
+        max-width: 570px;
+      }
+      .cinput button {
+        background-color: #4267B2;
+        border: none;
+        border-radius: 5px;
+        color: #fff;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 8px 12px;
+      }
+      .cinput button:hover {
+        background-color: #2e4b84;
+      }
+
+      .mtest{
+        background-color: aquamarine;
+      }
+      .cptest{
+        background-color: darksalmon;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div class="ccontainer">
+      <div class="cheader">
+        <h1>ひとり言くん</h1>
+      </div>
+      <div class="cmessages" id="cmessages"></div>
+
+      <button type="button" class="start">音声認識開始</button>
+      <button type="button" class="stop">終了</button> 
+
+      <div class="cinput">
+        <textarea id="response_text" cols="100" rows="10" disabled></textarea>
+        <br />
+        <button type="button" class="send">返答待ち</button>
+        <br />
+        <textarea id="gptresponse_text" cols="100" rows="10" disabled></textarea>
+        <audio class="audio"></audio>
+      </div>
+    </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <!-- Firebase SDKの読み込み -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+        import { getDatabase, ref, push, set, onChildAdded, remove, onChildRemoved }
+        from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+          apiKey: "",
+          authDomain: "",
+          projectId: "",
+          storageBucket: "",
+          messagingSenderId: "",
+          appId: ""
+        };
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        //  リアルタイムDBを使うための2行
+        const db = getDatabase(app); 
+        const dbRef = ref(db, "voicechat"); 
+
+        // 文字におこす送信
+
+        $(document).ready(function () {
+        const recognition = new webkitSpeechRecognition(); // prefix 必要 SpeechRecognition
+        recognition.lang = "ja";
+        recognition.continuous = true;
+        recognition.onresult = function (event) {
+          const output = $("#response_text");
+          output.text(event.results[0][0].transcript);
+          const msg = {
+            minput : event.results[0][0].transcript
+          }
+          const newPostRef = push(dbRef);
+            set(newPostRef,msg);
+            recognition.stop(); 
+        };
+
+             $(".start").click(function () {
+              if (recognition && recognition.readyState !== "listening") {
+               recognition.start();
+              }
+          });
+          $(".stop").click(function () {
+          recognition.stop();
+          });
+
+          recognition.start();
+
+        });
+
+
+        // 文字におこす受信＆chatGPT変換の依頼
+
+
+        onChildAdded(dbRef,function(data){
+            const msg = data.val();
+            const key = data.key;
+            let h = '<div>';
+            if (msg.cpinput) {
+                h += `<p  class="cptest">AI太郎: ${msg.cpinput}</p>`;
+                }
+            if (msg.minput) {
+                 h += `<p  class="mtest">ひと: ${msg.minput}</p>`;
+                }
+            h += '</div>';
+
+            $("#cmessages").append(h);
+
+
+        })
+
+        // 変換ボタンをおして、変換
+
+        const api_key = "openAIのKey";
+
+        $(document).ready(function () {
+    $(".send").click(async function () {
+      const text = $("#response_text").val();
+      const responseText = await requestChatAPI(text);
+      $("#gptresponse_text").text(responseText);
+
+      const cpmsg = {
+                cpinput : responseText,
+            };
+            const newPostRef = push(dbRef);
+            set(newPostRef,cpmsg);
+    });
+  });
+
+
+        // 関数requestChatAPI
+    async function requestChatAPI(text) {
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${api_key}`,
+    };
+
+    const messages = [
+        {
+        role: "system",
+        content: "あなたの名前はAI太郎。明るい５歳の男の子です。知識のレベルも５才児くらいです。会話の相手になってください。",
+        },
+      {
+        role: "user",
+        content: text,
+      },
+    ];
+
+    const payload = {
+      model: "gpt-3.5-turbo",
+      max_tokens: 128,
+      messages: messages,
+    };
+
+    const response = await $.ajax({
+      url: "https://api.openai.com/v1/chat/completions",
+      type: "POST",
+      headers: headers,
+      data: JSON.stringify(payload),
+      dataType: "json",
+    });
+
+    return response.choices[0].message.content;
+  }
+
+// chatgptの回答を再生したい
+const sendButton = document.querySelector(".send");
+      sendButton.addEventListener("click", async () => {
+        const text = document.querySelector("#gptresponse_text");
+        await createAudio(text.value);
+      });
+
+      async function createAudio(text) {
+        const data = await createVoice(text);
+        const audio = document.querySelector(".audio");
+        audio.src = URL.createObjectURL(data);
+        audio.play();
+      }
+      async function createQuery(text) {
+        const response = await axios.post(
+          `http://localhost:50021/audio_query?speaker=1&text=${text}`
+        );
+        return response.data;
+      }
+      async function createVoice(text) {
+        const query = await createQuery(text);
+        const response = await axios.post(
+          "http://localhost:50021/synthesis?speaker=1",
+          query,
+          { responseType: "blob" }
+        );
+        return response.data;
+      }
+      $(document).ready(function () {
+  $(".send").click(async function () {
+    const text = $("#response_text").val();
+    await createAudio(text);
+  });
+});
+
+
+    </script>
+
+
+  </body>
+  </html>
+  
